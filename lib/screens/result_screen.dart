@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
 import '../models.dart';
-import '../services/api_service.dart';
 import '../widgets/detection_card.dart';
 
 class ResultScreen extends StatefulWidget {
@@ -16,10 +14,6 @@ class _ResultScreenState extends State<ResultScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fade;
-  final AudioPlayer _player = AudioPlayer();
-
-  bool _speaking = false;
-  bool _loadingVoice = false;
 
   @override
   void initState() {
@@ -30,45 +24,11 @@ class _ResultScreenState extends State<ResultScreen>
     );
     _fade = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fadeCtrl.forward();
-    _player.onPlayerComplete.listen((_) {
-      if (mounted) setState(() => _speaking = false);
-    });
-  }
-
-  Future<void> _onVoiceTap() async {
-    if (_speaking) {
-      await _player.stop();
-      setState(() => _speaking = false);
-      return;
-    }
-
-    setState(() => _loadingVoice = true);
-    try {
-      final (wavBytes, _) = await ApiService.fetchVoiceAudio(widget.response);
-      if (!mounted) return;
-      setState(() {
-        _speaking = true;
-        _loadingVoice = false;
-      });
-      await _player.play(BytesSource(wavBytes));
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loadingVoice = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Impossible de générer le résumé vocal.'),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.all(12),
-        ),
-      );
-    }
   }
 
   @override
   void dispose() {
     _fadeCtrl.dispose();
-    _player.dispose();
     super.dispose();
   }
 
@@ -79,11 +39,6 @@ class _ResultScreenState extends State<ResultScreen>
     final hasDetections = response.detections.isNotEmpty;
 
     return Scaffold(
-      floatingActionButton: _VoiceButton(
-        speaking: _speaking,
-        loading: _loadingVoice,
-        onTap: _onVoiceTap,
-      ),
       body: CustomScrollView(
         slivers: [
           // ─── AppBar ──────────────────────────────────────────────────────────
@@ -432,103 +387,6 @@ class _HealthyCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ─── Voice Button ─────────────────────────────────────────────────────────────
-
-class _VoiceButton extends StatefulWidget {
-  final bool speaking;
-  final bool loading;
-  final VoidCallback onTap;
-
-  const _VoiceButton({
-    required this.speaking,
-    required this.loading,
-    required this.onTap,
-  });
-
-  @override
-  State<_VoiceButton> createState() => _VoiceButtonState();
-}
-
-class _VoiceButtonState extends State<_VoiceButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulse;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
-    _pulse = Tween<double>(begin: 1.0, end: 1.18).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _pulseCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        if (widget.speaking)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8, right: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: cs.inverseSurface,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              'Résumé wolof en cours…',
-              style: TextStyle(
-                color: cs.onInverseSurface,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        AnimatedBuilder(
-          animation: _pulse,
-          builder: (_, child) => Transform.scale(
-            scale: widget.speaking ? _pulse.value : 1.0,
-            child: child,
-          ),
-          child: FloatingActionButton(
-            onPressed: widget.loading ? null : widget.onTap,
-            backgroundColor: widget.speaking ? cs.error : cs.primary,
-            tooltip: widget.speaking ? 'Arrêter' : 'Écouter en wolof',
-            child: widget.loading
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                : Icon(
-                    widget.speaking
-                        ? Icons.stop_rounded
-                        : Icons.record_voice_over_rounded,
-                    color: Colors.white,
-                  ),
-          ),
-        ),
-      ],
     );
   }
 }
