@@ -5,76 +5,124 @@ import 'severity_badge.dart';
 
 class DetectionCard extends StatefulWidget {
   final Detection detection;
-
   const DetectionCard({super.key, required this.detection});
 
   @override
   State<DetectionCard> createState() => _DetectionCardState();
 }
 
-class _DetectionCardState extends State<DetectionCard> {
+class _DetectionCardState extends State<DetectionCard>
+    with SingleTickerProviderStateMixin {
   bool _expanded = false;
+  late final AnimationController _ctrl;
+  late final Animation<double> _expandAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+    _expandAnim = CurvedAnimation(
+      parent: _ctrl,
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded) {
+      _ctrl.forward();
+    } else {
+      _ctrl.reverse();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final d = widget.detection;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outlineVariant.withOpacity(0.45)),
+        boxShadow: [
+          BoxShadow(
+            color: cs.shadow.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         children: [
-          // ─── En-tête cliquable ───────────────────────────────────────────
+          // ─── Header ──────────────────────────────────────────────────────────
           InkWell(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(16),
+            onTap: _toggle,
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Image découpée (ou placeholder)
-                  _CroppedImage(url: d.croppedImageUrl),
-                  const SizedBox(width: 12),
-
-                  // Nom + confiance
+                  _Thumbnail(url: d.croppedImageUrl),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           d.className,
-                          style: theme.textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${(d.confidenceScore * 100).toStringAsFixed(0)}% de confiance',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: theme.colorScheme.outline),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         const SizedBox(height: 6),
-                        SeverityBadge(severity: d.severity),
+                        Row(
+                          children: [
+                            SeverityBadge(severity: d.severity),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${(d.confidenceScore * 100).toStringAsFixed(0)}% de confiance',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: cs.outline,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        _MiniBar(value: d.confidenceScore),
                       ],
                     ),
                   ),
-
-                  Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+                  const SizedBox(width: 8),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 280),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: cs.outline,
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
 
-          // ─── Détails (expandable) ────────────────────────────────────────
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 200),
-            crossFadeState: _expanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            firstChild: const SizedBox.shrink(),
-            secondChild: _DetailsSection(details: d.details),
+          // ─── Expanded body ────────────────────────────────────────────────────
+          SizeTransition(
+            sizeFactor: _expandAnim,
+            child: _ExpandedBody(details: d.details, cs: cs),
           ),
         ],
       ),
@@ -82,32 +130,62 @@ class _DetectionCardState extends State<DetectionCard> {
   }
 }
 
-// ─── Image découpée ───────────────────────────────────────────────────────────
+// ─── Mini confidence bar ──────────────────────────────────────────────────────
 
-class _CroppedImage extends StatelessWidget {
-  final String? url;
-  const _CroppedImage({this.url});
+class _MiniBar extends StatelessWidget {
+  final double value;
+  const _MiniBar({required this.value});
 
   @override
   Widget build(BuildContext context) {
-    final placeholder = Container(
-      width: 64,
-      height: 64,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant,
-        borderRadius: BorderRadius.circular(8),
+    final color = value > 0.8
+        ? Colors.red.shade400
+        : value > 0.5
+            ? Colors.orange.shade400
+            : Colors.green.shade400;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: LinearProgressIndicator(
+        value: value,
+        minHeight: 4,
+        backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+        color: color,
       ),
-      child: const Icon(Icons.eco_outlined, size: 28),
+    );
+  }
+}
+
+// ─── Thumbnail ────────────────────────────────────────────────────────────────
+
+class _Thumbnail extends StatelessWidget {
+  final String? url;
+  const _Thumbnail({this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final placeholder = Container(
+      width: 72,
+      height: 72,
+      decoration: BoxDecoration(
+        color: cs.surfaceVariant,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(
+        Icons.eco_outlined,
+        size: 30,
+        color: cs.primary.withOpacity(0.5),
+      ),
     );
 
     if (url == null || url!.isEmpty) return placeholder;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       child: CachedNetworkImage(
         imageUrl: url!,
-        width: 64,
-        height: 64,
+        width: 72,
+        height: 72,
         fit: BoxFit.cover,
         placeholder: (_, __) => placeholder,
         errorWidget: (_, __, ___) => placeholder,
@@ -116,50 +194,61 @@ class _CroppedImage extends StatelessWidget {
   }
 }
 
-// ─── Section détails ──────────────────────────────────────────────────────────
+// ─── Expanded Body ────────────────────────────────────────────────────────────
 
-class _DetailsSection extends StatelessWidget {
+class _ExpandedBody extends StatelessWidget {
   final DetectionDetails details;
-  const _DetailsSection({required this.details});
+  final ColorScheme cs;
+  const _ExpandedBody({required this.details, required this.cs});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: cs.outlineVariant.withOpacity(0.4)),
+        ),
+      ),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Divider(),
-          _InfoTile(
-            icon: Icons.description_outlined,
+          _InfoBlock(
+            icon: Icons.info_outline_rounded,
+            color: cs.primary,
             label: 'Description',
             text: details.description,
           ),
-          const SizedBox(height: 8),
-          _InfoTile(
+          const SizedBox(height: 12),
+          _InfoBlock(
             icon: Icons.warning_amber_rounded,
+            color: Colors.orange,
             label: 'Impact',
             text: details.impact,
           ),
           if (!details.recommendations.isEmpty) ...[
-            const SizedBox(height: 12),
-            _RecommendationsSection(recs: details.recommendations),
+            const SizedBox(height: 16),
+            _RecommendationTabs(recs: details.recommendations),
           ],
           if (details.knowledgeBaseTags.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 6,
-              runSpacing: 4,
+              runSpacing: 6,
               children: details.knowledgeBaseTags
-                  .map(
-                    (tag) => Chip(
-                      label: Text(tag),
-                      labelStyle: const TextStyle(fontSize: 11),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                    ),
-                  )
+                  .map((tag) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: cs.surfaceVariant,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '#$tag',
+                          style: TextStyle(
+                              fontSize: 11, color: cs.onSurfaceVariant),
+                        ),
+                      ))
                   .toList(),
             ),
           ],
@@ -169,13 +258,17 @@ class _DetailsSection extends StatelessWidget {
   }
 }
 
-class _InfoTile extends StatelessWidget {
+// ─── Info Block ───────────────────────────────────────────────────────────────
+
+class _InfoBlock extends StatelessWidget {
   final IconData icon;
+  final Color color;
   final String label;
   final String text;
 
-  const _InfoTile({
+  const _InfoBlock({
     required this.icon,
+    required this.color,
     required this.label,
     required this.text,
   });
@@ -186,22 +279,34 @@ class _InfoTile extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: theme.colorScheme.outline),
-        const SizedBox(width: 8),
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 16, color: color),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                label,
+                label.toUpperCase(),
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.outline,
+                  color: color,
+                  letterSpacing: 0.8,
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(text, style: const TextStyle(fontSize: 13)),
+              const SizedBox(height: 3),
+              Text(
+                text,
+                style: theme.textTheme.bodySmall?.copyWith(height: 1.45),
+              ),
             ],
           ),
         ),
@@ -210,106 +315,169 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
-class _RecommendationsSection extends StatelessWidget {
+// ─── Recommendation Tabs ──────────────────────────────────────────────────────
+
+class _RecTab {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final List<RecommendationItem> items;
+  const _RecTab(this.icon, this.label, this.color, this.items);
+}
+
+class _RecommendationTabs extends StatefulWidget {
   final Recommendations recs;
-  const _RecommendationsSection({required this.recs});
+  const _RecommendationTabs({required this.recs});
+
+  @override
+  State<_RecommendationTabs> createState() => _RecommendationTabsState();
+}
+
+class _RecommendationTabsState extends State<_RecommendationTabs> {
+  int _sel = 0;
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    final tabs = [
+      if (widget.recs.biological.isNotEmpty)
+        _RecTab(Icons.nature, 'Bio', Colors.green, widget.recs.biological),
+      if (widget.recs.chemical.isNotEmpty)
+        _RecTab(Icons.science_outlined, 'Chimique', Colors.blue,
+            widget.recs.chemical),
+      if (widget.recs.cultural.isNotEmpty)
+        _RecTab(Icons.agriculture, 'Culturale', Colors.orange,
+            widget.recs.cultural),
+    ];
+
+    if (tabs.isEmpty) return const SizedBox.shrink();
+
+    final sel = _sel.clamp(0, tabs.length - 1);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Recommandations',
-          style: Theme.of(context)
-              .textTheme
-              .labelMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
+          'RECOMMANDATIONS',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: cs.outline,
+            letterSpacing: 0.8,
+          ),
         ),
-        const SizedBox(height: 6),
-        if (recs.biological.isNotEmpty)
-          _RecGroup(
-            icon: Icons.nature,
-            color: Colors.green,
-            label: 'Biologique',
-            items: recs.biological,
+        const SizedBox(height: 8),
+
+        // Tab buttons
+        Row(
+          children: tabs.asMap().entries.map((e) {
+            final isSelected = e.key == sel;
+            final tab = e.value;
+            return Expanded(
+              child: Padding(
+                padding:
+                    EdgeInsets.only(right: e.key < tabs.length - 1 ? 8 : 0),
+                child: GestureDetector(
+                  onTap: () => setState(() => _sel = e.key),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? tab.color
+                          : cs.surfaceVariant.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: tab.color.withOpacity(0.3),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              )
+                            ]
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          tab.icon,
+                          size: 13,
+                          color: isSelected ? Colors.white : cs.onSurface,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          tab.label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isSelected ? Colors.white : cs.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 10),
+
+        // Items (animated switch)
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: _RecList(
+            key: ValueKey(sel),
+            items: tabs[sel].items,
+            color: tabs[sel].color,
           ),
-        if (recs.chemical.isNotEmpty)
-          _RecGroup(
-            icon: Icons.science_outlined,
-            color: Colors.blue,
-            label: 'Chimique',
-            items: recs.chemical,
-          ),
-        if (recs.cultural.isNotEmpty)
-          _RecGroup(
-            icon: Icons.agriculture,
-            color: Colors.orange,
-            label: 'Culturale',
-            items: recs.cultural,
-          ),
+        ),
       ],
     );
   }
 }
 
-class _RecGroup extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String label;
+class _RecList extends StatelessWidget {
   final List<RecommendationItem> items;
+  final Color color;
 
-  const _RecGroup({
-    required this.icon,
-    required this.color,
-    required this.label,
-    required this.items,
-  });
+  const _RecList({super.key, required this.items, required this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
+    return Column(
+      children: items
+          .map((item) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withOpacity(0.18)),
                 ),
-              ),
-            ],
-          ),
-          ...items.map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(left: 18, top: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '• ${item.solution}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.solution,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: color,
+                      ),
                     ),
-                  ),
-                  Text(
-                    item.details,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.details,
+                      style: const TextStyle(fontSize: 12, height: 1.4),
+                    ),
+                  ],
+                ),
+              ))
+          .toList(),
     );
   }
 }
